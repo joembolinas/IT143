@@ -1,4 +1,3 @@
-
 ## 🧠 My Reflection: Week 3 CTF Challenge – *Hacker’s Diary*
 
 ---
@@ -90,5 +89,3 @@ Using my notebook’s regex pattern (`FLAG{.*}`), I caught the following anomaly
 This challenge went beyond just "finding a flag." It taught me how to think like an analyst. I built a custom log analysis notebook to stay aligned with the course's best practices, and in doing so, I gained firsthand experience in building incident response logic.
 
 Seeing the flag appear from a well-built filter I coded myself felt empowering. I wasn't just solving a puzzle—I was simulating a real-world cyber forensic workflow. This was one of the most engaging challenges so far.
-
-
