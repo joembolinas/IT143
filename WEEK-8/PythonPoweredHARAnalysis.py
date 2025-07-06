@@ -1,5 +1,3 @@
-
-
 # HAR File Analyzer - A Python GUI Application for analyzing HTTP Archive files
 # This application allows users to load and analyze HAR files to extract network request data
 
@@ -8,8 +6,10 @@ import tkinter as tk                    # Main GUI library
 from tkinter import filedialog         # File dialog for selecting HAR files
 from tkinter import ttk                 # Enhanced GUI widgets
 from tkinter import messagebox         # Message boxes for alerts
+from tkinter import scrolledtext       # Scrollable text widget for detailed output
 import json                            # JSON parsing for HAR files
-from haralyzer import HarParser        # HAR file parsing library
+import re                              # Regular expressions for pattern matching
+# from haralyzer import HarParser        # HAR file parsing library - REMOVED (not needed)
 import pandas as pd                    # Data manipulation and analysis
 import requests                        # HTTP requests library
 import matplotlib.pyplot as plt       # Plotting and visualization
@@ -21,12 +21,29 @@ class HARAnalyzerApp:
     def __init__(self, root):
         """Initialize the GUI application"""
         self.root = root
-        self.root.title("HAR File Analyzer")      # Set window title
-        self.root.geometry("700x400")             # Set window size
+        self.root.title("HAR File Analyzer - Enhanced with Flag Detection")      # Set window title
+        self.root.geometry("900x600")             # Increased window size
+        
+        # Store data for analysis
+        self.har_data = None
+        self.flags_found = []
+        self.session_tokens = []
+        
+        self.setup_gui()
+        
+    def setup_gui(self):
+        """Setup the GUI components"""
+        # Create main frame
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Button frame
+        button_frame = tk.Frame(main_frame)
+        button_frame.pack(fill=tk.X, pady=(0, 10))
         
         # Create load button
         self.load_button = tk.Button(
-            root, 
+            button_frame, 
             text="Load HAR File", 
             command=self.load_har_file,           # Button click handler
             font=("Arial", 12),
@@ -35,10 +52,56 @@ class HARAnalyzerApp:
             padx=20,
             pady=10
         )
-        self.load_button.pack(pady=10)
+        self.load_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Create flag search button
+        self.flag_button = tk.Button(
+            button_frame, 
+            text="Search for Flags", 
+            command=self.search_flags,
+            font=("Arial", 12),
+            bg="#FF9800",
+            fg="white",
+            padx=20,
+            pady=10,
+            state=tk.DISABLED
+        )
+        self.flag_button.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Create session token button
+        self.token_button = tk.Button(
+            button_frame, 
+            text="Extract Session Tokens", 
+            command=self.extract_session_tokens,
+            font=("Arial", 12),
+            bg="#2196F3",
+            fg="white",
+            padx=20,
+            pady=10,
+            state=tk.DISABLED
+        )
+        self.token_button.pack(side=tk.LEFT)
+        
+        # Create notebook for tabs
+        self.notebook = ttk.Notebook(main_frame)
+        self.notebook.pack(fill=tk.BOTH, expand=True)
+        
+        # Tab 1: Request Overview
+        self.setup_overview_tab()
+        
+        # Tab 2: Flag Analysis
+        self.setup_flag_tab()
+        
+        # Tab 3: Session Tokens
+        self.setup_token_tab()
+        
+    def setup_overview_tab(self):
+        """Setup the overview tab with request data"""
+        overview_frame = ttk.Frame(self.notebook)
+        self.notebook.add(overview_frame, text="Request Overview")
         
         # Create table (Treeview) for displaying data
-        self.tree = ttk.Treeview(root, columns=("URL", "Status", "Time"), show="headings")
+        self.tree = ttk.Treeview(overview_frame, columns=("URL", "Status", "Time"), show="headings")
         
         # Define column headings
         self.tree.heading("URL", text="Request URL")
@@ -51,12 +114,55 @@ class HARAnalyzerApp:
         self.tree.column("Time", width=100, anchor="center")   # Center align time
         
         # Pack the treeview with scrollbar
-        scrollbar = ttk.Scrollbar(root, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
+        tree_scrollbar = ttk.Scrollbar(overview_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scrollbar.set)
         
         # Pack treeview and scrollbar
         self.tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
-        scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+        tree_scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
+        
+    def setup_flag_tab(self):
+        """Setup the flag analysis tab"""
+        flag_frame = ttk.Frame(self.notebook)
+        self.notebook.add(flag_frame, text="Flag Analysis")
+        
+        # Flag results frame
+        flag_results_frame = tk.Frame(flag_frame)
+        flag_results_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Flag results label
+        flag_label = tk.Label(flag_results_frame, text="Flag Search Results:", font=("Arial", 12, "bold"))
+        flag_label.pack(anchor=tk.W)
+        
+        # Flag results text area
+        self.flag_text = scrolledtext.ScrolledText(flag_results_frame, height=20, wrap=tk.WORD)
+        self.flag_text.pack(fill=tk.BOTH, expand=True, pady=(5, 0))
+        
+    def setup_token_tab(self):
+        """Setup the session tokens tab"""
+        token_frame = ttk.Frame(self.notebook)
+        self.notebook.add(token_frame, text="Session Tokens")
+        
+        # Token table
+        self.token_tree = ttk.Treeview(token_frame, columns=("Index", "URL", "Token"), show="headings")
+        
+        # Define column headings
+        self.token_tree.heading("Index", text="Entry #")
+        self.token_tree.heading("URL", text="URL")
+        self.token_tree.heading("Token", text="Session Token")
+        
+        # Set column widths
+        self.token_tree.column("Index", width=80, anchor="center")
+        self.token_tree.column("URL", width=300, anchor="w")
+        self.token_tree.column("Token", width=400, anchor="w")
+        
+        # Token scrollbar
+        token_scrollbar = ttk.Scrollbar(token_frame, orient="vertical", command=self.token_tree.yview)
+        self.token_tree.configure(yscrollcommand=token_scrollbar.set)
+        
+        # Pack token tree and scrollbar
+        self.token_tree.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
+        token_scrollbar.pack(side="right", fill="y", padx=(0, 10), pady=10)
         
     def load_har_file(self):
         """Load and parse HAR file selected by user"""
@@ -71,13 +177,12 @@ class HARAnalyzerApp:
             return
             
         try:
-            # Read and parse the HAR file
+            # Read and parse the HAR file directly
             with open(file_path, 'r', encoding='utf-8') as file:
-                har_data = json.load(file)          # Load JSON data
+                self.har_data = json.load(file)          # Store HAR data for analysis
                 
-            # Use HarParser to extract HTTP data
-            har_parser = HarParser(har_data)
-            entries = har_parser.entries            # Get all network requests
+            # Extract entries directly from JSON structure
+            entries = self.har_data['log']['entries']
             
             # Clear previous data in treeview
             for item in self.tree.get_children():
@@ -85,25 +190,217 @@ class HARAnalyzerApp:
                 
             # Extract and display key data
             for entry in entries:
-                url = entry.url                     # Request URL
-                status = entry.response.status      # HTTP status code
-                time = entry.time                   # Response time in milliseconds
-                
-                # Insert data into table
-                self.tree.insert("", "end", values=(url, status, f"{time:.2f}"))
+                try:
+                    # Extract data from JSON structure with safe access
+                    request = entry.get('request', {})
+                    response = entry.get('response', {})
+                    
+                    url = request.get('url', 'Unknown URL')                    # Request URL
+                    status = response.get('status', 'Unknown')                 # HTTP status code
+                    time = entry.get('time', 0)                              # Response time in milliseconds
+                    
+                    # Handle missing or invalid time values
+                    if time is None:
+                        time = 0
+                    
+                    # Insert data into table
+                    self.tree.insert("", "end", values=(url, status, f"{time:.2f}"))
+                    
+                except Exception as entry_error:
+                    # Skip this entry if there's an error processing it
+                    print(f"Warning: Skipping entry due to error: {entry_error}")
+                    continue
+            
+            # Enable analysis buttons
+            self.flag_button.config(state=tk.NORMAL)
+            self.token_button.config(state=tk.NORMAL)
                 
             # Show success message
             messagebox.showinfo(
                 "Success", 
-                f"Successfully loaded {len(entries)} requests from HAR file"
+                f"Successfully loaded {len(entries)} requests from HAR file.\nYou can now search for flags and session tokens!"
             )
             
+        except KeyError as e:
+            # Handle missing keys in HAR structure
+            messagebox.showerror(
+                "Error", 
+                f"Invalid HAR file structure. Missing key: {str(e)}"
+            )
+        except json.JSONDecodeError:
+            # Handle invalid JSON format
+            messagebox.showerror(
+                "Error", 
+                "Invalid JSON format. Please select a valid HAR file."
+            )
         except Exception as e:
-            # Handle errors (invalid file format, etc.)
+            # Handle other errors (invalid file format, etc.)
             messagebox.showerror(
                 "Error", 
                 f"Failed to load HAR file: {str(e)}"
             )
+    
+    def search_flags(self):
+        """Search for flags in the loaded HAR data"""
+        if not self.har_data:
+            messagebox.showwarning("Warning", "Please load a HAR file first!")
+            return
+            
+        self.flags_found = []
+        entries = self.har_data['log']['entries']
+        
+        # Clear previous results
+        self.flag_text.delete(1.0, tk.END)
+        self.flag_text.insert(tk.END, "🔍 Searching for flags in HAR file...\n\n")
+        self.root.update()
+        
+        # Search for flags in each entry
+        for i, entry in enumerate(entries):
+            try:
+                # Get response data
+                response = entry.get('response', {})
+                content = response.get('content', {})
+                response_text = content.get('text', '')
+                
+                # Skip empty responses
+                if not response_text:
+                    continue
+                    
+                # Try to parse JSON responses
+                try:
+                    if response_text.strip().startswith('{'):
+                        json_data = json.loads(response_text)
+                        
+                        # Look for session tokens with flags
+                        session_token = json_data.get('session_token')
+                        if session_token and 'FLAG{' in session_token:
+                            self.flags_found.append({
+                                'entry_index': i,
+                                'url': entry.get('request', {}).get('url', 'Unknown'),
+                                'flag': session_token,
+                                'context': 'Session Token',
+                                'full_response': json_data
+                            })
+                        
+                        # Search for any FLAG pattern in the entire response
+                        response_str = str(json_data)
+                        flag_matches = re.findall(r'FLAG\{[^}]+\}', response_str)
+                        for flag in flag_matches:
+                            if flag not in [f['flag'] for f in self.flags_found]:
+                                self.flags_found.append({
+                                    'entry_index': i,
+                                    'url': entry.get('request', {}).get('url', 'Unknown'),
+                                    'flag': flag,
+                                    'context': 'JSON Response'
+                                })
+                                
+                except json.JSONDecodeError:
+                    # Not JSON, search for flags in plain text
+                    flag_matches = re.findall(r'FLAG\{[^}]+\}', response_text)
+                    for flag in flag_matches:
+                        self.flags_found.append({
+                            'entry_index': i,
+                            'url': entry.get('request', {}).get('url', 'Unknown'),
+                            'flag': flag,
+                            'context': 'Plain Text Response'
+                        })
+                        
+            except Exception as e:
+                continue
+        
+        # Display results
+        self.display_flag_results()
+        
+        # Switch to flag tab
+        self.notebook.select(1)
+    
+    def extract_session_tokens(self):
+        """Extract session tokens from the loaded HAR data"""
+        if not self.har_data:
+            messagebox.showwarning("Warning", "Please load a HAR file first!")
+            return
+            
+        self.session_tokens = []
+        entries = self.har_data['log']['entries']
+        
+        # Clear previous token data
+        for item in self.token_tree.get_children():
+            self.token_tree.delete(item)
+        
+        # Search for session tokens in each entry
+        for i, entry in enumerate(entries):
+            try:
+                # Get response data
+                response = entry.get('response', {})
+                content = response.get('content', {})
+                response_text = content.get('text', '')
+                
+                # Skip empty responses
+                if not response_text:
+                    continue
+                    
+                # Try to parse JSON responses
+                try:
+                    if response_text.strip().startswith('{'):
+                        json_data = json.loads(response_text)
+                        
+                        # Look for session tokens
+                        session_token = json_data.get('session_token')
+                        if session_token:
+                            self.session_tokens.append({
+                                'entry_index': i,
+                                'url': entry.get('request', {}).get('url', 'Unknown'),
+                                'session_token': session_token,
+                                'full_response': json_data
+                            })
+                            
+                            # Insert into token tree
+                            self.token_tree.insert("", "end", values=(i, entry.get('request', {}).get('url', 'Unknown'), session_token))
+                                
+                except json.JSONDecodeError:
+                    continue
+                        
+            except Exception as e:
+                continue
+        
+        # Show results message
+        messagebox.showinfo(
+            "Session Tokens", 
+            f"Found {len(self.session_tokens)} session tokens in the HAR file!"
+        )
+        
+        # Switch to token tab
+        self.notebook.select(2)
+    
+    def display_flag_results(self):
+        """Display flag search results in the text area"""
+        self.flag_text.delete(1.0, tk.END)
+        
+        if self.flags_found:
+            self.flag_text.insert(tk.END, "🎉 FLAG ANALYSIS RESULTS\n")
+            self.flag_text.insert(tk.END, "=" * 50 + "\n\n")
+            self.flag_text.insert(tk.END, f"🚩 Found {len(self.flags_found)} flag(s):\n\n")
+            
+            for i, flag_info in enumerate(self.flags_found, 1):
+                self.flag_text.insert(tk.END, f"{i}. FLAG: {flag_info['flag']}\n")
+                self.flag_text.insert(tk.END, f"   Entry Index: {flag_info['entry_index']}\n")
+                self.flag_text.insert(tk.END, f"   URL: {flag_info['url']}\n")
+                self.flag_text.insert(tk.END, f"   Context: {flag_info['context']}\n")
+                self.flag_text.insert(tk.END, "-" * 40 + "\n\n")
+            
+            # Highlight the main flag if found
+            for flag_info in self.flags_found:
+                if 'h4r_f1le_4n4lys1s_w1n' in flag_info['flag']:
+                    self.flag_text.insert(tk.END, "🎯 MAIN CTF FLAG FOUND!\n")
+                    self.flag_text.insert(tk.END, f"Submit this flag: {flag_info['flag']}\n\n")
+                    break
+                    
+        else:
+            self.flag_text.insert(tk.END, "❌ No flags found in the HAR file.\n\n")
+            self.flag_text.insert(tk.END, "💡 Tips:\n")
+            self.flag_text.insert(tk.END, "- Make sure you loaded the correct HAR file\n")
+            self.flag_text.insert(tk.END, "- Check if the file contains API responses\n")
+            self.flag_text.insert(tk.END, "- Try extracting session tokens first\n")
 
 def analyze_har_with_pandas(har_file_path):
     """Analyze HAR file using pandas for data manipulation"""
@@ -118,13 +415,20 @@ def analyze_har_with_pandas(har_file_path):
         # Create list of dictionaries for DataFrame
         data = []
         for entry in entries:
-            data.append({
-                'url': entry['request']['url'],
-                'method': entry['request']['method'],
-                'status': entry['response']['status'],
-                'time': entry['time'],
-                'size': entry['response']['bodySize']
-            })
+            try:
+                request = entry.get('request', {})
+                response = entry.get('response', {})
+                
+                data.append({
+                    'url': request.get('url', 'Unknown'),
+                    'method': request.get('method', 'Unknown'),
+                    'status': response.get('status', 0),
+                    'time': entry.get('time', 0),
+                    'size': response.get('bodySize', 0)
+                })
+            except Exception as e:
+                print(f"Warning: Skipping entry due to error: {e}")
+                continue
             
         # Convert to pandas DataFrame
         df = pd.DataFrame(data)
