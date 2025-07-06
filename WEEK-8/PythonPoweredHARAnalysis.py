@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 # HAR File Analyzer - A Python GUI Application for analyzing HTTP Archive files
 # This application allows users to load and analyze HAR files to extract network request data
 
